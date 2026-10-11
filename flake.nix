@@ -98,7 +98,10 @@
               # wrapper's PATH does not reach this builder -- the sandbox
               # only sees nativeBuildInputs.
               pkgs.git
-            ];
+            ]
+            # The group-kill test calls `ps` (see `_running`). The Linux
+            # sandbox has no `ps` on PATH.
+            ++ nixpkgs.lib.optionals pkgs.stdenv.isLinux [ pkgs.procps ];
           } ''
             test -x "$package/bin/lupin"
             "$package/bin/lupin" --help >/dev/null
