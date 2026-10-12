@@ -3,7 +3,7 @@
 Lupin runs coding-agent loops on a group of machines (a fleet). It does
 four jobs:
 
-1. **Routing.** It selects a model and an effort level for a task.
+1. **Routing.** It selects a model and an effort level for a task based on available quota. (Supports Claude, OpenAI, and OpenCode Go subscription quota readouts)
 2. **Slots.** It limits how many callers use a resource at the same time.
 3. **Dashboard.** It shows the loops in a web page, and lets you start and
    stop them.
