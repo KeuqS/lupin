@@ -257,22 +257,27 @@ def test_failed_list_call_cuts_only_its_section(tmp_path: Path, monkeypatch):
     assert "- PR #20: Red build" in _section(text, "Risk")
 
 
-def test_malformed_ledger_row_keeps_other_sections(
-    tmp_path: Path, monkeypatch, redis_port, flush_redis
+def test_malformed_ledger_row_is_skipped_without_losing_other_rows(
+    tmp_path: Path, monkeypatch, redis_port, flush_redis, capsys
 ):
     checkout = tmp_path / "widgets"
     checkout.mkdir()
-    # A row with no "ts" field. Real Redis, real ledger.read_events.
-    redis.Redis(host="127.0.0.1", port=redis_port).xadd(
-        ledger._stream_key(FULL), {"host": "h", "event": "shipped"}
-    )
+    client = redis.Redis(host="127.0.0.1", port=redis_port)
+    # The first row is malformed. The next row must still reach the debrief.
+    client.xadd(ledger._stream_key(FULL), {"host": "h", "event": "shipped"})
+    client.xadd(ledger._stream_key(FULL), {
+        "ts": "2026-10-02T10:00:00Z", "host": "h", "event": "shipped",
+        "issue": "12", "next": json.dumps(["Keep going."]),
+    })
     monkeypatch.setattr(debrief, "_gh", FakeGh(dict(RESPONSES)))
     monkeypatch.setattr(debrief.slots_redis, "debrief_client", _debrief_client_on(redis_port))
 
     path = debrief.write_debrief(tmp_path, "widgets", checkout, "2026-10-02T09:00:00Z")
 
     text = path.read_text(encoding="utf-8")
-    assert "Ledger unavailable" in _section(text, "Follow-up tasks")
+    assert "- #12: Keep going." in _section(text, "Follow-up tasks")
+    assert "Ledger unavailable" not in text
+    assert "skipped bad entry" in capsys.readouterr().err
     assert "- PR #11: Shipped feature" in text
     assert "## Evidence" in text
 
