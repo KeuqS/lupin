@@ -1,8 +1,10 @@
 """The `lupin` command-line entry point.
 
-Lupin provides task classification and model routing, quota and fleet
-coordination, loop management, and read-only status commands. Use a
-subcommand's own `--help` output for its arguments and examples.
+Routing: classify work and choose a model and effort for each task.
+Slots: coordinate leases so workers can share capacity safely.
+Dashboard: inspect quota, usage, machine health, and loop status.
+Fleet: join machines, dispatch loops, and manage remote actions.
+Use a subcommand's own `--help` output for its arguments.
 """
 
 from __future__ import annotations
@@ -50,6 +52,19 @@ DEFAULT_RESULT_WAIT_S = 20.0  # how long stop/peek/schedule/pause/resume
 # which is derived from ACTION_TIMEOUT_S. A local loop.stop uses
 # ACTION_TIMEOUT_S as its limit. A caller who wants to wait longer than
 # 20 seconds passes --wait.
+
+ROOT_EPILOG = """Exit codes, by design:
+
+  0  the command completed successfully
+  1  another error, including malformed input or a failed local/remote action
+  2  the request was busy or full and should be retried later, or the command
+     line was invalid
+  3  the coordinator could not be reached and no local fallback was available
+  4  a remote command was sent but its final result is still unknown; check
+     `lupin cmd status <id>` later
+  5  a repository matched zero or multiple fleet machines; pass `--machine`
+     instead of guessing
+""";
 
 
 def _route_args(parser: argparse.ArgumentParser) -> None:
@@ -522,7 +537,12 @@ def _pause_resume_args(parser: argparse.ArgumentParser) -> None:
 
 
 def _build_parser() -> argparse.ArgumentParser:
-    parser = argparse.ArgumentParser(prog="lupin", description=__doc__)
+    parser = argparse.ArgumentParser(
+        prog="lupin",
+        description=__doc__,
+        epilog=ROOT_EPILOG,
+        formatter_class=argparse.RawDescriptionHelpFormatter,
+    )
     sub = parser.add_subparsers(dest="cmd", required=True)
     _route_args(sub.add_parser("route", help="pick a {model, effort} for a (category, size) pair"))
     _classify_args(sub.add_parser("classify", help="sort an issue into (category, size)"))
@@ -605,6 +625,8 @@ def _build_parser() -> argparse.ArgumentParser:
     _fleet_connection_args(loops_parser)
     loop_parser = sub.add_parser("loop", help=argparse.SUPPRESS)
     loop_parser.add_argument("loop_args", nargs=argparse.REMAINDER, help=argparse.SUPPRESS)
+    # Keep the internal compatibility alias parseable without advertising it in help.
+    sub._choices_actions = [action for action in sub._choices_actions if action.dest != "loop"]
     _stop_args(sub.add_parser("stop", help="stop a repo's loop, on whichever machine runs it"))
     _peek_args(sub.add_parser("peek", help="show recent pane output for a repo's loop"))
     _attach_args(sub.add_parser("attach", help="attach a terminal to a repo's loop session"))
@@ -1725,9 +1747,9 @@ def _exit_for_dispatch(result: dict) -> tuple[int, dict]:
     """Turn a `loops.dispatch_loop_action()` result into an exit code and
     a result dict. Shared by `stop`/`peek`/`schedule`/`pause`/`resume`.
 
-    See cli.py's module docstring for what 0, 1, and 4 mean. Exit code 5
-    (`AmbiguousMachine`) and `attach` are handled elsewhere, before
-    dispatch is even tried.
+    See the root help's exit-code section for what 0, 1, 4, and 5 mean.
+    `AmbiguousMachine` and `attach` are handled elsewhere, before dispatch
+    is even tried.
     """
     if result["mode"] == "local":
         rc = result["returncode"]
