@@ -64,7 +64,7 @@ ROOT_EPILOG = """Exit codes, by design:
      `lupin cmd status <id>` later
   5  a repository matched zero or multiple fleet machines; pass `--machine`
      instead of guessing
-""";
+"""
 
 
 def _route_args(parser: argparse.ArgumentParser) -> None:
